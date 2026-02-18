@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-TW">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+    <title>Sensor Test Lab</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@300;400;700;900&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#ccff00",
+                        "surface": "#121212", 
+                    },
+                    fontFamily: {
+                        "mono": ["Chivo Mono", "monospace"]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        body { background-color: #000; color: #fff; touch-action: none; user-select: none; }
+        .canvas-container { position: relative; width: 100%; height: 200px; border-top: 1px solid #333; border-bottom: 1px solid #333; background: #0a0a0a; }
+        canvas { display: block; width: 100%; height: 100%; }
+        .flash { animation: flash-anim 0.2s ease-out; }
+        @keyframes flash-anim {
+            0% { background-color: rgba(204, 255, 0, 0.3); }
+            100% { background-color: transparent; }
+        }
+        /* Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #ccff00;
+            cursor: pointer;
+            margin-top: -10px;
+            box-shadow: 0 0 10px rgba(204,255,0,0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #333;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-[100dvh]">
+
+    <!-- Header -->
+    <header class="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-surface">
+        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab</h1>
+        <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono" id="status">WAITING</div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col relative overflow-hidden" id="main-area">
+        
+        <!-- SPM Display -->
+        <div class="flex-[3] flex flex-col items-center justify-center relative z-10">
+            <div class="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Estimated Rate</div>
+            <div class="font-mono text-8xl font-black text-white leading-none tracking-tighter" id="spm-val">--</div>
+            <div class="text-primary font-bold text-xl mt-2">SPM</div>
+            <div class="mt-4 text-xs text-white/40 font-mono" id="debug-info">Raw: 0.00</div>
+        </div>
+
+        <!-- Live Chart -->
+        <div class="canvas-container">
+            <canvas id="chart"></canvas>
+            <div class="absolute top-2 left-2 text-[10px] text-primary/50 font-mono">LIVE ACCELEROMETER</div>
+            <!-- Threshold Value Display on Chart -->
+            <div class="absolute top-2 right-2 text-[10px] text-red-400 font-mono font-bold" id="th-display">TH: 13.50</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex-[2] flex flex-col items-center justify-center p-6 gap-6 w-full">
+            
+            <!-- Sensitivity Slider -->
+            <div class="w-full max-w-xs">
+                <div class="flex justify-between text-xs text-white/60 mb-2 font-mono">
+                    <span>Sensitive (Low G)</span>
+                    <span>Hard (High G)</span>
+                </div>
+                <input type="range" id="threshold-slider" min="10.5" max="20.0" step="0.1" value="13.5" oninput="updateThreshold(this.value)">
+                <div class="text-center text-xs text-primary mt-2">調整觸發門檻 (Threshold)</div>
+            </div>
+
+            <!-- iOS Permission Button -->
+            <button id="btn-enable" onclick="requestSensorPermission()" class="w-full max-w-xs bg-white/10 border border-white/20 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform uppercase tracking-wider text-sm">
+                啟動感測器 (Enable Sensors)
+            </button>
+            
+            <div class="flex gap-4 w-full max-w-xs">
+                 <button onclick="resetData()" class="flex-1 bg-surface border border-white/10 text-white/50 hover:text-white font-bold py-2 rounded-lg text-xs">Reset Data</button>
+            </div>
+        </div>
+
+    </main>
+
+<script>
+    // --- Configuration ---
+    const CONFIG = {
+        threshold: 13.5,     // 初始門檻
+        debounceMs: 600,     // 防抖動 (600ms = Max 100 SPM)
+        chartPoints: 100     // 圖表寬度
+    };
+
+    // --- State ---
+    const state = {
+        active: false,
+        lastPeakTime: 0,
+        peaks: [],
+        dataHistory: new Array(CONFIG.chartPoints).fill(9.8),
+        currentMag: 0
+    };
+
+    // --- DOM ---
+    const els = {
+        spmVal: document.getElementById('spm-val'),
+        status: document.getElementById('status'),
+        btnEnable: document.getElementById('btn-enable'),
+        debug: document.getElementById('debug-info'),
+        main: document.getElementById('main-area'),
+        canvas: document.getElementById('chart'),
+        thDisplay: document.getElementById('th-display')
+    };
+    const ctx = els.canvas.getContext('2d');
+
+    // --- Threshold Control ---
+    function updateThreshold(val) {
+        CONFIG.threshold = parseFloat(val);
+        els.thDisplay.innerText = `TH: ${CONFIG.threshold.toFixed(2)}`;
+    }
+
+    // --- Core Logic ---
+    function handleMotion(event) {
+        const acc = event.accelerationIncludingGravity;
+        if (!acc) return;
+
+        // 1. Calculate Magnitude (Vector Sum)
+        const x = acc.x || 0;
+        const y = acc.y || 0;
+        const z = acc.z || 0;
+        const magnitude = Math.sqrt(x*x + y*y + z*z);
+        
+        state.currentMag = magnitude;
+        
+        // Update Chart History
+        state.dataHistory.push(magnitude);
+        state.dataHistory.shift();
+
+        // 2. Detect
+        detectPeak(magnitude);
+
+        // 3. Debug Text
+        els.debug.innerText = `Force: ${magnitude.toFixed(2)} m/s²`;
+    }
+
+    function detectPeak(mag) {
+        const now = Date.now();
+        
+        // Dynamic Threshold Check
+        if (mag > CONFIG.threshold && (now - state.lastPeakTime > CONFIG.debounceMs)) {
+            
+            state.lastPeakTime = now;
+            triggerFlash();
+            
+            if (state.peaks.length > 0) {
+                const lastTime = state.peaks[state.peaks.length - 1];
+                const deltaSec = (now - lastTime) / 1000;
+                const currentSpm = Math.round(60 / deltaSec);
+                
+                // Reasonable Range Filter (20 - 130 SPM)
+                if (currentSpm > 20 && currentSpm < 130) {
+                    updateDisplay(currentSpm);
+                }
+            }
+            
+            state.peaks.push(now);
+            if (state.peaks.length > 5) state.peaks.shift();
+        }
+    }
+
+    function updateDisplay(spm) {
+        els.spmVal.innerText = spm;
+        els.spmVal.classList.add('text-primary');
+        setTimeout(() => els.spmVal.classList.remove('text-primary'), 200);
+    }
+
+    function triggerFlash() {
+        els.main.classList.remove('flash');
+        void els.main.offsetWidth;
+        els.main.classList.add('flash');
+        if(navigator.vibrate) navigator.vibrate(50);
+    }
+
+    // --- Permissions ---
+    async function requestSensorPermission() {
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const permissionState = await DeviceMotionEvent.requestPermission();
+                if (permissionState === 'granted') {
+                    startSensors();
+                } else {
+                    alert("Permission denied.");
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        } else {
+            startSensors();
+        }
+    }
+
+    function startSensors() {
+        window.addEventListener('devicemotion', handleMotion);
+        state.active = true;
+        els.status.innerText = "ACTIVE";
+        els.status.classList.add("text-primary");
+        els.btnEnable.style.display = 'none';
+    }
+    
+    function resetData() {
+        state.peaks = [];
+        state.lastPeakTime = 0;
+        els.spmVal.innerText = "--";
+    }
+
+    // --- Visualizer ---
+    function drawLoop() {
+        const w = els.canvas.width = els.canvas.clientWidth;
+        const h = els.canvas.height = els.canvas.clientHeight;
+        
+        ctx.clearRect(0, 0, w, h);
+        
+        // Map Y coordinate (0-25 range for visualization)
+        const mapY = (val) => h - ((val / 25) * h); 
+        
+        // 1. Draw Gravity Ref (Grey) ~ 9.8
+        const gY = mapY(9.8);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.beginPath(); ctx.moveTo(0, gY); ctx.lineTo(w, gY); ctx.stroke();
+
+        // 2. Draw Dynamic Threshold (Red)
+        const thY = mapY(CONFIG.threshold);
+        ctx.strokeStyle = 'rgba(255, 80, 80, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(0, thY); ctx.lineTo(w, thY); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 3. Draw Signal (Green)
+        ctx.beginPath();
+        ctx.strokeStyle = '#ccff00';
+        ctx.lineWidth = 2;
+        
+        const step = w / CONFIG.chartPoints;
+        state.dataHistory.forEach((val, i) => {
+            const x = i * step;
+            const y = mapY(val);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        requestAnimationFrame(drawLoop);
+    }
+
+    requestAnimationFrame(drawLoop);
+
+</script>
+</body>
+</html>
