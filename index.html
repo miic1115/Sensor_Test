@@ -3,12 +3,21 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
-    <title>Sensor Test Lab</title>
+    <title>Sensor Lab V2</title>
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@300;400;700;900&display=swap" rel="stylesheet"/>
+    <!-- App Icon (請在此處替換您的 Base64 代碼) -->
+    <meta name="apple-mobile-web-app-title" content="DPace V2">
+    <link rel="apple-touch-icon" href="在此處貼上您的Base64代碼">
+    <link rel="icon" type="image/png" href="在此處貼上您的Base64代碼">
     
-    <script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Fonts & Tailwind -->
+    <link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@300;400;700;900&family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
@@ -16,8 +25,10 @@
                     colors: {
                         "primary": "#ccff00",
                         "surface": "#121212", 
+                        "accent-red": "#ff3333",
                     },
                     fontFamily: {
+                        "display": ["Lexend", "sans-serif"],
                         "mono": ["Chivo Mono", "monospace"]
                     }
                 },
@@ -25,256 +36,344 @@
         }
     </script>
     <style>
-        body { background-color: #000; color: #fff; touch-action: none; user-select: none; }
-        .canvas-container { position: relative; width: 100%; height: 200px; border-top: 1px solid #333; border-bottom: 1px solid #333; background: #0a0a0a; }
+        body { background-color: #000; color: #fff; touch-action: none; user-select: none; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        .canvas-container { position: relative; width: 100%; height: 220px; border-top: 1px solid #333; border-bottom: 1px solid #333; background: #0a0a0a; }
         canvas { display: block; width: 100%; height: 100%; }
         .flash { animation: flash-anim 0.2s ease-out; }
         @keyframes flash-anim {
-            0% { background-color: rgba(204, 255, 0, 0.3); }
+            0% { background-color: rgba(204, 255, 0, 0.25); }
             100% { background-color: transparent; }
         }
-        /* Slider Styling */
-        input[type=range] {
-            -webkit-appearance: none;
-            width: 100%;
-            background: transparent;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 24px;
-            width: 24px;
-            border-radius: 50%;
-            background: #ccff00;
-            cursor: pointer;
-            margin-top: -10px;
-            box-shadow: 0 0 10px rgba(204,255,0,0.5);
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 4px;
-            cursor: pointer;
-            background: #333;
-            border-radius: 2px;
-        }
+        .timer-font { font-family: 'Chivo Mono', monospace; font-variant-numeric: tabular-nums; }
+        
+        /* Custom Toggle Switch */
+        .toggle-checkbox:checked { right: 0; border-color: #ccff00; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #ccff00; }
     </style>
 </head>
-<body class="flex flex-col h-[100dvh]">
+<body class="flex flex-col h-[100dvh] font-display">
 
     <!-- Header -->
-    <header class="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-surface">
-        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab</h1>
-        <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono" id="status">WAITING</div>
+    <header class="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-surface flex-shrink-0">
+        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab <span class="text-white">V2</span></h1>
+        <div class="flex gap-2">
+            <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono flex items-center gap-1" id="gps-status">
+                <span class="material-symbols-outlined text-[12px]">satellite_alt</span> WAIT
+            </div>
+            <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono" id="sensor-status">IMU: OFF</div>
+        </div>
     </header>
 
     <!-- Main Content -->
     <main class="flex-1 flex flex-col relative overflow-hidden" id="main-area">
         
-        <!-- SPM Display -->
-        <div class="flex-[3] flex flex-col items-center justify-center relative z-10">
-            <div class="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Estimated Rate</div>
-            <div class="font-mono text-8xl font-black text-white leading-none tracking-tighter" id="spm-val">--</div>
-            <div class="text-primary font-bold text-xl mt-2">SPM</div>
-            <div class="mt-4 text-xs text-white/40 font-mono" id="debug-info">Raw: 0.00</div>
+        <!-- Dual Dashboard (SPM & Speed) -->
+        <div class="flex-[3] flex items-center justify-center relative z-10 w-full p-4 gap-4">
+            
+            <!-- Left: SPM -->
+            <div class="flex-1 flex flex-col items-center justify-center bg-surface/50 border border-white/5 rounded-2xl h-full py-4">
+                <div class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-1">Stroke Rate</div>
+                <div class="timer-font text-7xl min-[400px]:text-8xl font-black text-primary leading-none tracking-tighter" id="spm-val">--</div>
+                <div class="text-white/60 font-bold text-sm mt-1">SPM</div>
+            </div>
+
+            <!-- Right: Speed -->
+            <div class="flex-1 flex flex-col items-center justify-center bg-surface/50 border border-white/5 rounded-2xl h-full py-4">
+                <div class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-1">Boat Speed</div>
+                <div class="timer-font text-6xl min-[400px]:text-7xl font-black text-white leading-none tracking-tighter" id="speed-val">0.0</div>
+                <div class="text-white/60 font-bold text-sm mt-2">km/h</div>
+            </div>
+
         </div>
 
-        <!-- Live Chart -->
-        <div class="canvas-container">
+        <!-- Live Chart (Adaptive Envelope) -->
+        <div class="canvas-container flex-shrink-0">
             <canvas id="chart"></canvas>
-            <div class="absolute top-2 left-2 text-[10px] text-primary/50 font-mono">LIVE ACCELEROMETER</div>
-            <!-- Threshold Value Display on Chart -->
-            <div class="absolute top-2 right-2 text-[10px] text-red-400 font-mono font-bold" id="th-display">TH: 13.50</div>
+            <div class="absolute top-2 left-2 text-[10px] text-primary/70 font-mono tracking-wider">NET ACCELERATION (G-Filtered)</div>
+            <div class="absolute bottom-2 right-2 text-[10px] text-red-400 font-mono font-bold" id="th-display">Auto-TH: 0.00</div>
         </div>
 
         <!-- Controls -->
-        <div class="flex-[2] flex flex-col items-center justify-center p-6 gap-6 w-full">
+        <div class="flex-[2] flex flex-col items-center justify-start p-5 gap-4 w-full bg-surface">
             
-            <!-- Sensitivity Slider -->
-            <div class="w-full max-w-xs">
-                <div class="flex justify-between text-xs text-white/60 mb-2 font-mono">
-                    <span>Sensitive (Low G)</span>
-                    <span>Hard (High G)</span>
+            <!-- GPS Gating Toggle -->
+            <div class="w-full max-w-xs flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/10">
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-white">Strict GPS Gate</span>
+                    <span class="text-[10px] text-white/50 leading-tight">Must be > 2km/h to count SPM.<br>Turn OFF for dry-land testing.</span>
                 </div>
-                <input type="range" id="threshold-slider" min="10.5" max="20.0" step="0.1" value="13.5" oninput="updateThreshold(this.value)">
-                <div class="text-center text-xs text-primary mt-2">調整觸發門檻 (Threshold)</div>
+                <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="toggle" id="gps-gate-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 top-0 bottom-0 m-auto"/>
+                    <label for="gps-gate-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer"></label>
+                </div>
             </div>
 
-            <!-- iOS Permission Button -->
-            <button id="btn-enable" onclick="requestSensorPermission()" class="w-full max-w-xs bg-white/10 border border-white/20 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform uppercase tracking-wider text-sm">
-                啟動感測器 (Enable Sensors)
+            <!-- Enable Button -->
+            <button id="btn-enable" onclick="requestSensorPermission()" class="w-full max-w-xs bg-primary text-black font-bold py-4 rounded-xl shadow-[0_0_15px_rgba(204,255,0,0.4)] active:scale-95 transition-transform uppercase tracking-wider text-sm mt-2">
+                啟動測試 (Enable Sensors)
             </button>
-            
-            <div class="flex gap-4 w-full max-w-xs">
-                 <button onclick="resetData()" class="flex-1 bg-surface border border-white/10 text-white/50 hover:text-white font-bold py-2 rounded-lg text-xs">Reset Data</button>
+
+            <!-- Debug Info -->
+            <div class="w-full text-center mt-auto pb-2">
+                <span class="text-[10px] text-white/30 font-mono" id="debug-info">Base: 9.80 | Net: 0.00</span>
             </div>
         </div>
 
     </main>
 
 <script>
-    // --- Configuration ---
+    // --- Algorithm Configuration V2 ---
     const CONFIG = {
-        threshold: 13.5,     // 初始門檻
-        debounceMs: 600,     // 防抖動 (600ms = Max 100 SPM)
-        chartPoints: 100     // 圖表寬度
+        filterAlpha: 0.85,      // 低通濾波係數 (用來找重力基準線)
+        minThreshold: 0.5,      // 絕對最低門檻 (低於這個力量絕對不算一槳，濾除碎浪)
+        envelopeDecay: 0.995,   // 包絡線衰減率 (決定適應新力道有多快，約每秒衰減30%)
+        envelopeRatio: 0.6,     // 動態門檻比例 (取近期最大推力的 60% 作為門檻)
+        debounceMs: 400,        // 防抖動 (400ms = 允許最高 150 SPM)
+        speedGateKmH: 2.0,      // GPS閘門速度
+        chartPoints: 120        // 圖表解析度
     };
 
-    // --- State ---
+    // --- Core State ---
     const state = {
         active: false,
+        gpsReady: false,
+        speed: 0,
+        useGpsGate: false, // 預設關閉，方便陸地測試
+        
+        // Sensor Math
+        estimatedGravity: 9.81, // 系統會自動學習這個值
+        linearAcc: 0,           // 去除重力後的淨推力
+        localPeak: 0.5,         // 當前動態最高點
+        currentThreshold: 0.5,  // 當前動態門檻 (紅線)
+        
+        // SPM Math
         lastPeakTime: 0,
-        peaks: [],
-        dataHistory: new Array(CONFIG.chartPoints).fill(9.8),
-        currentMag: 0
+        strokeTimes: [],        // 儲存最近3次的間距用來做移動平均
+        
+        // Visualizer
+        historyAcc: new Array(CONFIG.chartPoints).fill(0),
+        historyTh: new Array(CONFIG.chartPoints).fill(0.5)
     };
 
-    // --- DOM ---
+    // --- DOM Elements ---
     const els = {
         spmVal: document.getElementById('spm-val'),
-        status: document.getElementById('status'),
+        speedVal: document.getElementById('speed-val'),
+        sensorStatus: document.getElementById('sensor-status'),
+        gpsStatus: document.getElementById('gps-status'),
         btnEnable: document.getElementById('btn-enable'),
         debug: document.getElementById('debug-info'),
         main: document.getElementById('main-area'),
         canvas: document.getElementById('chart'),
-        thDisplay: document.getElementById('th-display')
+        thDisplay: document.getElementById('th-display'),
+        gpsToggle: document.getElementById('gps-gate-toggle')
     };
     const ctx = els.canvas.getContext('2d');
 
-    // --- Threshold Control ---
-    function updateThreshold(val) {
-        CONFIG.threshold = parseFloat(val);
-        els.thDisplay.innerText = `TH: ${CONFIG.threshold.toFixed(2)}`;
+    // Toggle Listener
+    els.gpsToggle.addEventListener('change', (e) => {
+        state.useGpsGate = e.target.checked;
+    });
+
+    // --- GPS Logic ---
+    function initGPS() {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const speedMs = position.coords.speed;
+                    state.speed = speedMs ? (speedMs * 3.6) : 0.0;
+                    els.speedVal.innerText = state.speed.toFixed(1);
+                    
+                    state.gpsReady = true;
+                    els.gpsStatus.innerHTML = `<span class="material-symbols-outlined text-[12px] text-primary">satellite_alt</span> ON`;
+                    els.gpsStatus.classList.add('text-primary');
+                },
+                (err) => { 
+                    state.gpsReady = false; 
+                    els.gpsStatus.innerHTML = `<span class="material-symbols-outlined text-[12px] text-accent-red">satellite_alt</span> ERR`;
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        }
     }
 
-    // --- Core Logic ---
+    // --- Advanced Sensor Math V2 ---
     function handleMotion(event) {
         const acc = event.accelerationIncludingGravity;
         if (!acc) return;
 
-        // 1. Calculate Magnitude (Vector Sum)
+        // 1. Calculate Magnitude
         const x = acc.x || 0;
         const y = acc.y || 0;
         const z = acc.z || 0;
-        const magnitude = Math.sqrt(x*x + y*y + z*z);
-        
-        state.currentMag = magnitude;
-        
-        // Update Chart History
-        state.dataHistory.push(magnitude);
-        state.dataHistory.shift();
+        const rawMag = Math.sqrt(x*x + y*y + z*z);
 
-        // 2. Detect
-        detectPeak(magnitude);
+        // 2. High-Pass Filter (Gravity Isolation)
+        // 學習當前的重力值 (Low-pass)
+        state.estimatedGravity = (CONFIG.filterAlpha * state.estimatedGravity) + ((1 - CONFIG.filterAlpha) * rawMag);
+        // 算出淨推力 (High-pass)，並取絕對值(因為拉水和回槳我們都要看)
+        state.linearAcc = Math.abs(rawMag - state.estimatedGravity);
 
-        // 3. Debug Text
-        els.debug.innerText = `Force: ${magnitude.toFixed(2)} m/s²`;
+        // 3. Adaptive Envelope (動態門檻核心)
+        // 慢慢讓最高點衰減
+        state.localPeak *= CONFIG.envelopeDecay;
+        
+        // 如果遇到更大的推力，更新最高點
+        if (state.linearAcc > state.localPeak) {
+            state.localPeak = state.linearAcc;
+        }
+
+        // 算出當前門檻 (最高點的 60%，但不能低於底限 0.5)
+        state.currentThreshold = Math.max(CONFIG.minThreshold, state.localPeak * CONFIG.envelopeRatio);
+
+        // Update Chart Arrays
+        state.historyAcc.push(state.linearAcc);
+        state.historyAcc.shift();
+        state.historyTh.push(state.currentThreshold);
+        state.historyTh.shift();
+
+        // 4. Peak Detection & Gating
+        processStroke(state.linearAcc, state.currentThreshold);
+
+        // Debug Output
+        els.debug.innerText = `Grav: ${state.estimatedGravity.toFixed(2)} | Net: ${state.linearAcc.toFixed(2)}`;
+        els.thDisplay.innerText = `Auto-TH: ${state.currentThreshold.toFixed(2)}`;
     }
 
-    function detectPeak(mag) {
+    function processStroke(accValue, threshold) {
         const now = Date.now();
         
-        // Dynamic Threshold Check
-        if (mag > CONFIG.threshold && (now - state.lastPeakTime > CONFIG.debounceMs)) {
-            
-            state.lastPeakTime = now;
-            triggerFlash();
-            
-            if (state.peaks.length > 0) {
-                const lastTime = state.peaks[state.peaks.length - 1];
-                const deltaSec = (now - lastTime) / 1000;
-                const currentSpm = Math.round(60 / deltaSec);
-                
-                // Reasonable Range Filter (20 - 130 SPM)
-                if (currentSpm > 20 && currentSpm < 130) {
-                    updateDisplay(currentSpm);
-                }
-            }
-            
-            state.peaks.push(now);
-            if (state.peaks.length > 5) state.peaks.shift();
+        // Gating Logic (如果開啟了 GPS 閘門，且速度低於 2km/h，則忽略動作)
+        if (state.useGpsGate && state.speed < CONFIG.speedGateKmH) {
+            els.spmVal.innerText = "IDLE";
+            els.spmVal.style.fontSize = "3rem";
+            els.spmVal.classList.remove('text-primary');
+            els.spmVal.classList.add('text-white/30');
+            state.strokeTimes = []; // 清空陣列
+            return;
+        } else {
+            els.spmVal.style.fontSize = ""; // 恢復字體大小
+            if(els.spmVal.innerText === "IDLE") els.spmVal.innerText = "--";
         }
-    }
 
-    function updateDisplay(spm) {
-        els.spmVal.innerText = spm;
-        els.spmVal.classList.add('text-primary');
-        setTimeout(() => els.spmVal.classList.remove('text-primary'), 200);
+        // Peak Condition
+        if (accValue > threshold && (now - state.lastPeakTime > CONFIG.debounceMs)) {
+            
+            // Valid Stroke!
+            const deltaSec = (now - state.lastPeakTime) / 1000;
+            state.lastPeakTime = now;
+            
+            triggerFlash();
+
+            // 如果間隔太久(超過3秒 = 低於20 SPM)，視為重新起步
+            if (deltaSec > 3.0) {
+                state.strokeTimes = [];
+                return;
+            }
+
+            // Moving Average for SPM (平滑化數字跳動)
+            const instantSpm = 60 / deltaSec;
+            state.strokeTimes.push(instantSpm);
+            if (state.strokeTimes.length > 3) state.strokeTimes.shift();
+
+            // Calculate Average
+            const avgSpm = Math.round(state.strokeTimes.reduce((a, b) => a + b) / state.strokeTimes.length);
+            
+            if (avgSpm > 20 && avgSpm < 150) {
+                els.spmVal.innerText = avgSpm;
+                els.spmVal.classList.add('text-white');
+                els.spmVal.classList.remove('text-primary');
+                setTimeout(() => {
+                    els.spmVal.classList.add('text-primary');
+                    els.spmVal.classList.remove('text-white');
+                }, 150);
+            }
+        }
     }
 
     function triggerFlash() {
         els.main.classList.remove('flash');
         void els.main.offsetWidth;
         els.main.classList.add('flash');
-        if(navigator.vibrate) navigator.vibrate(50);
+        if(navigator.vibrate) navigator.vibrate(40);
     }
 
-    // --- Permissions ---
+    // --- Permissions & Init ---
     async function requestSensorPermission() {
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
                 const permissionState = await DeviceMotionEvent.requestPermission();
                 if (permissionState === 'granted') {
-                    startSensors();
+                    startApp();
                 } else {
-                    alert("Permission denied.");
+                    alert("需要感測器權限才能運作。");
                 }
             } catch (error) {
                 console.error(error);
             }
         } else {
-            startSensors();
+            startApp();
         }
     }
 
-    function startSensors() {
+    function startApp() {
         window.addEventListener('devicemotion', handleMotion);
+        initGPS();
         state.active = true;
-        els.status.innerText = "ACTIVE";
-        els.status.classList.add("text-primary");
+        els.sensorStatus.innerText = "IMU: ON";
+        els.sensorStatus.classList.add("text-primary");
         els.btnEnable.style.display = 'none';
     }
-    
-    function resetData() {
-        state.peaks = [];
-        state.lastPeakTime = 0;
-        els.spmVal.innerText = "--";
-    }
 
-    // --- Visualizer ---
+    // --- Advanced Visualizer (Centered at 0) ---
     function drawLoop() {
         const w = els.canvas.width = els.canvas.clientWidth;
         const h = els.canvas.height = els.canvas.clientHeight;
         
         ctx.clearRect(0, 0, w, h);
         
-        // Map Y coordinate (0-25 range for visualization)
-        const mapY = (val) => h - ((val / 25) * h); 
+        // Mapping: 0 is at the bottom. Max visual range is approx 5.0 m/s^2
+        const MAX_G = 6.0;
+        const mapY = (val) => h - Math.min((val / MAX_G) * h, h); 
         
-        // 1. Draw Gravity Ref (Grey) ~ 9.8
-        const gY = mapY(9.8);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.beginPath(); ctx.moveTo(0, gY); ctx.lineTo(w, gY); ctx.stroke();
+        // 1. Draw Baseline 0 (Grey)
+        const zeroY = h - 1;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
 
-        // 2. Draw Dynamic Threshold (Red)
-        const thY = mapY(CONFIG.threshold);
+        const step = w / CONFIG.chartPoints;
+
+        // 2. Draw Dynamic Threshold Line (Red Envelope)
+        ctx.beginPath();
         ctx.strokeStyle = 'rgba(255, 80, 80, 0.8)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
-        ctx.beginPath(); ctx.moveTo(0, thY); ctx.lineTo(w, thY); ctx.stroke();
-        ctx.setLineDash([]);
-
-        // 3. Draw Signal (Green)
-        ctx.beginPath();
-        ctx.strokeStyle = '#ccff00';
-        ctx.lineWidth = 2;
-        
-        const step = w / CONFIG.chartPoints;
-        state.dataHistory.forEach((val, i) => {
+        state.historyTh.forEach((val, i) => {
             const x = i * step;
             const y = mapY(val);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         });
         ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 3. Draw Net Acceleration Signal (Neon Green)
+        ctx.beginPath();
+        ctx.strokeStyle = '#ccff00';
+        ctx.lineWidth = 2;
+        // 加上一點陰影讓它有發光感
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = '#ccff00';
+        
+        state.historyAcc.forEach((val, i) => {
+            const x = i * step;
+            const y = mapY(val);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        
+        ctx.shadowBlur = 0; // reset
 
         requestAnimationFrame(drawLoop);
     }
