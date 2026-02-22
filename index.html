@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
-    <title>Sensor Lab V2</title>
+    <title>Sensor Lab V3</title>
     
     <!-- App Icon (請在此處替換您的 Base64 代碼) -->
-    <meta name="apple-mobile-web-app-title" content="DPace V2">
+    <meta name="apple-mobile-web-app-title" content="DPace V3">
     <link rel="apple-touch-icon" href="在此處貼上您的Base64代碼">
     <link rel="icon" type="image/png" href="在此處貼上您的Base64代碼">
     
@@ -55,7 +55,7 @@
 
     <!-- Header -->
     <header class="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-surface flex-shrink-0">
-        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab <span class="text-white">V2</span></h1>
+        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab <span class="text-white">V3</span></h1>
         <div class="flex gap-2">
             <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono flex items-center gap-1" id="gps-status">
                 <span class="material-symbols-outlined text-[12px]">satellite_alt</span> WAIT
@@ -122,11 +122,11 @@
     </main>
 
 <script>
-    // --- Algorithm Configuration V2 ---
+    // --- Algorithm Configuration V3 ---
     const CONFIG = {
         filterAlpha: 0.85,      // 低通濾波係數 (用來找重力基準線)
-        minThreshold: 0.5,      // 絕對最低門檻 (低於這個力量絕對不算一槳，濾除碎浪)
-        envelopeDecay: 0.995,   // 包絡線衰減率 (決定適應新力道有多快，約每秒衰減30%)
+        minThreshold: 0.3,      // [V3更新] 絕對最低門檻，從 0.5 降到 0.3，對輕微起伏更敏感
+        envelopeDecay: 0.99,    // [V3更新] 包絡線衰減率，從 0.995 稍微加快到 0.99，快速適應輕柔力道
         envelopeRatio: 0.6,     // 動態門檻比例 (取近期最大推力的 60% 作為門檻)
         debounceMs: 400,        // 防抖動 (400ms = 允許最高 150 SPM)
         speedGateKmH: 2.0,      // GPS閘門速度
@@ -143,8 +143,8 @@
         // Sensor Math
         estimatedGravity: 9.81, // 系統會自動學習這個值
         linearAcc: 0,           // 去除重力後的淨推力
-        localPeak: 0.5,         // 當前動態最高點
-        currentThreshold: 0.5,  // 當前動態門檻 (紅線)
+        localPeak: 0.3,         // [V3更新] 初始化對應 minThreshold
+        currentThreshold: 0.3,  // [V3更新] 初始化對應 minThreshold
         
         // SPM Math
         lastPeakTime: 0,
@@ -152,7 +152,7 @@
         
         // Visualizer
         historyAcc: new Array(CONFIG.chartPoints).fill(0),
-        historyTh: new Array(CONFIG.chartPoints).fill(0.5)
+        historyTh: new Array(CONFIG.chartPoints).fill(0.3) // [V3更新]
     };
 
     // --- DOM Elements ---
@@ -197,7 +197,7 @@
         }
     }
 
-    // --- Advanced Sensor Math V2 ---
+    // --- Advanced Sensor Math V3 ---
     function handleMotion(event) {
         const acc = event.accelerationIncludingGravity;
         if (!acc) return;
@@ -223,7 +223,7 @@
             state.localPeak = state.linearAcc;
         }
 
-        // 算出當前門檻 (最高點的 60%，但不能低於底限 0.5)
+        // 算出當前門檻 (最高點的 60%，但不能低於底限 minThreshold)
         state.currentThreshold = Math.max(CONFIG.minThreshold, state.localPeak * CONFIG.envelopeRatio);
 
         // Update Chart Arrays
@@ -243,7 +243,7 @@
     function processStroke(accValue, threshold) {
         const now = Date.now();
         
-        // Gating Logic (如果開啟了 GPS 閘門，且速度低於 2km/h，則忽略動作)
+        // Gating Logic (如果開啟了 GPS 閘門，且速度低於速度底限，則忽略動作)
         if (state.useGpsGate && state.speed < CONFIG.speedGateKmH) {
             els.spmVal.innerText = "IDLE";
             els.spmVal.style.fontSize = "3rem";
