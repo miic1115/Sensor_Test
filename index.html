@@ -709,25 +709,6 @@
         
         ctx.shadowBlur = 0; 
 
-        // Update timer UI manually if stopped to keep it zeroed if reset
-        if (!state.timer.running) {
-            let rawTime = state.timer.elapsedTime;
-            const date = new Date(rawTime);
-            const m = String(date.getUTCMinutes()).padStart(2, '0');
-            const s = String(date.getUTCSeconds()).padStart(2, '0');
-            const ms = String(Math.floor(date.getUTCMilliseconds() / 10)).padStart(2, '0');
-            els.timerMain.innerText = `${m}:${s}`;
-            els.timerMs.innerText = `.${ms}`;
-        } else {
-            let rawTime = Date.now() - state.timer.startTime;
-            const date = new Date(rawTime);
-            const m = String(date.getUTCMinutes()).padStart(2, '0');
-            const s = String(date.getUTCSeconds()).padStart(2, '0');
-            const ms = String(Math.floor(date.getUTCMilliseconds() / 10)).padStart(2, '0');
-            els.timerMain.innerText = `${m}:${s}`;
-            els.timerMs.innerText = `.${ms}`;
-        }
-
         requestAnimationFrame(drawLoop);
     }
 
