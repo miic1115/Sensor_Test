@@ -3,12 +3,21 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
-    <title>Sensor Test Lab</title>
+    <title>Sensor Lab V3</title>
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@300;400;700;900&display=swap" rel="stylesheet"/>
+    <!-- App Icon -->
+    <meta name="apple-mobile-web-app-title" content="DPace V3">
+    <link rel="apple-touch-icon" href="https://cdn.imgchest.com/files/31943627712d.png">
+    <link rel="icon" type="image/png" href="https://cdn.imgchest.com/files/31943627712d.png">
     
-    <script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Fonts & Tailwind -->
+    <link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@300;400;700;900&family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
@@ -16,8 +25,10 @@
                     colors: {
                         "primary": "#ccff00",
                         "surface": "#121212", 
+                        "accent-red": "#ff3333",
                     },
                     fontFamily: {
+                        "display": ["Lexend", "sans-serif"],
                         "mono": ["Chivo Mono", "monospace"]
                     }
                 },
@@ -25,14 +36,20 @@
         }
     </script>
     <style>
-        body { background-color: #000; color: #fff; touch-action: none; user-select: none; }
-        .canvas-container { position: relative; width: 100%; height: 200px; border-top: 1px solid #333; border-bottom: 1px solid #333; background: #0a0a0a; }
+        body { background-color: #000; color: #fff; touch-action: none; user-select: none; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        .canvas-container { position: relative; width: 100%; height: 220px; border-top: 1px solid #333; border-bottom: 1px solid #333; background: #0a0a0a; }
         canvas { display: block; width: 100%; height: 100%; }
         .flash { animation: flash-anim 0.2s ease-out; }
         @keyframes flash-anim {
-            0% { background-color: rgba(204, 255, 0, 0.3); }
+            0% { background-color: rgba(204, 255, 0, 0.25); }
             100% { background-color: transparent; }
         }
+        .timer-font { font-family: 'Chivo Mono', monospace; font-variant-numeric: tabular-nums; }
+        
+        /* Custom Toggle Switch */
+        .toggle-checkbox:checked { right: 0; border-color: #ccff00; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #ccff00; }
+
         /* Slider Styling */
         input[type=range] {
             -webkit-appearance: none;
@@ -56,225 +73,641 @@
             background: #333;
             border-radius: 2px;
         }
+
+        /* Modal Transition */
+        .modal-bg {
+            transition: opacity 0.2s ease, visibility 0.2s;
+        }
+        .modal-bg.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        .modal-bg:not(.hidden) {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
     </style>
 </head>
-<body class="flex flex-col h-[100dvh]">
+<body class="flex flex-col h-[100dvh] font-display">
 
     <!-- Header -->
-    <header class="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-surface">
-        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab</h1>
-        <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono" id="status">WAITING</div>
+    <header class="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-surface flex-shrink-0">
+        <h1 class="font-bold text-sm tracking-widest text-primary uppercase">Sensor Lab <span class="text-white">V3</span></h1>
+        <div class="flex items-center gap-2">
+            <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono flex items-center gap-1" id="gps-status">
+                <span class="material-symbols-outlined text-[12px]">satellite_alt</span> WAIT
+            </div>
+            <div class="text-[10px] text-white/50 bg-white/10 px-2 py-1 rounded font-mono mr-2" id="sensor-status">IMU: OFF</div>
+            
+            <!-- Report Button -->
+            <button onclick="toggleReport()" class="flex items-center justify-center w-8 h-8 rounded-full hover:bg-white/10 active:bg-white/20 text-primary">
+                <span class="material-symbols-outlined text-lg">bar_chart</span>
+            </button>
+            
+            <!-- Settings Button -->
+            <button onclick="toggleSettings()" class="flex items-center justify-center w-8 h-8 rounded-full hover:bg-white/10 active:bg-white/20 text-white/70">
+                <span class="material-symbols-outlined text-lg">settings</span>
+            </button>
+        </div>
     </header>
 
     <!-- Main Content -->
     <main class="flex-1 flex flex-col relative overflow-hidden" id="main-area">
         
-        <!-- SPM Display -->
-        <div class="flex-[3] flex flex-col items-center justify-center relative z-10">
-            <div class="text-xs text-white/40 font-bold uppercase tracking-widest mb-2">Estimated Rate</div>
-            <div class="font-mono text-8xl font-black text-white leading-none tracking-tighter" id="spm-val">--</div>
-            <div class="text-primary font-bold text-xl mt-2">SPM</div>
-            <div class="mt-4 text-xs text-white/40 font-mono" id="debug-info">Raw: 0.00</div>
+        <!-- Dual Dashboard (SPM & Speed) -->
+        <div class="flex-[3] flex items-center justify-center relative z-10 w-full p-4 gap-4">
+            
+            <!-- Left: SPM -->
+            <div class="flex-1 flex flex-col items-center justify-center bg-surface/50 border border-white/5 rounded-2xl h-full py-4">
+                <div class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-1">Stroke Rate</div>
+                <div class="timer-font text-7xl min-[400px]:text-8xl font-black text-primary leading-none tracking-tighter" id="spm-val">--</div>
+                <div class="text-white/60 font-bold text-sm mt-1">SPM</div>
+            </div>
+
+            <!-- Right: Speed -->
+            <div class="flex-1 flex flex-col items-center justify-center bg-surface/50 border border-white/5 rounded-2xl h-full py-4">
+                <div class="text-[10px] text-white/40 font-bold uppercase tracking-widest mb-1">Boat Speed</div>
+                <div class="timer-font text-6xl min-[400px]:text-7xl font-black text-white leading-none tracking-tighter" id="speed-val">0.0</div>
+                <div class="text-white/60 font-bold text-sm mt-2">km/h</div>
+            </div>
+
         </div>
 
-        <!-- Live Chart -->
-        <div class="canvas-container">
+        <!-- Live Chart (Adaptive Envelope) -->
+        <div class="canvas-container flex-shrink-0">
             <canvas id="chart"></canvas>
-            <div class="absolute top-2 left-2 text-[10px] text-primary/50 font-mono">LIVE ACCELEROMETER</div>
-            <!-- Threshold Value Display on Chart -->
-            <div class="absolute top-2 right-2 text-[10px] text-red-400 font-mono font-bold" id="th-display">TH: 13.50</div>
+            <div class="absolute top-2 left-2 text-[10px] text-primary/70 font-mono tracking-wider">NET ACCELERATION (G-Filtered)</div>
+            <div class="absolute bottom-2 right-2 text-[10px] text-red-400 font-mono font-bold" id="th-display">Auto-TH: 0.00</div>
+            
+            <!-- Logging Indicator -->
+            <div id="logging-indicator" class="hidden absolute top-2 right-2 flex items-center gap-1 text-[10px] text-accent-red font-mono font-bold animate-pulse">
+                <span class="w-2 h-2 rounded-full bg-accent-red"></span> LOGGING
+            </div>
         </div>
 
         <!-- Controls -->
-        <div class="flex-[2] flex flex-col items-center justify-center p-6 gap-6 w-full">
+        <div class="flex-[2] flex flex-col items-center justify-start p-5 gap-4 w-full bg-surface">
             
-            <!-- Sensitivity Slider -->
+            <!-- Min Threshold Slider -->
             <div class="w-full max-w-xs">
-                <div class="flex justify-between text-xs text-white/60 mb-2 font-mono">
-                    <span>Sensitive (Low G)</span>
-                    <span>Hard (High G)</span>
+                <div class="flex justify-between text-[10px] text-white/60 mb-2 font-mono">
+                    <span>Sensitive (0.1)</span>
+                    <span>Hard (1.5)</span>
                 </div>
-                <input type="range" id="threshold-slider" min="10.5" max="20.0" step="0.1" value="13.5" oninput="updateThreshold(this.value)">
-                <div class="text-center text-xs text-primary mt-2">調整觸發門檻 (Threshold)</div>
+                <input type="range" id="min-th-slider" min="0.1" max="1.5" step="0.05" value="0.3" oninput="updateMinThreshold(this.value)">
+                <div class="text-center text-xs text-primary mt-1 font-bold" id="min-th-label">Min Threshold: 0.30</div>
             </div>
 
-            <!-- iOS Permission Button -->
-            <button id="btn-enable" onclick="requestSensorPermission()" class="w-full max-w-xs bg-white/10 border border-white/20 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform uppercase tracking-wider text-sm">
-                啟動感測器 (Enable Sensors)
+            <!-- Start / Stop Button -->
+            <div class="flex gap-3 w-full max-w-xs mt-2">
+                <button onclick="finishSession()" class="flex-1 bg-white/5 hover:bg-white/10 border border-white/20 text-white font-bold py-3 rounded-xl active:scale-[0.98] flex items-center justify-center gap-1 uppercase tracking-wider text-sm transition-all">
+                    <span class="material-symbols-outlined text-lg">flag</span>
+                    Finish
+                </button>
+                <button id="btn-start" onclick="toggleTimer()" class="flex-[2] bg-primary text-background-dark font-bold py-3 rounded-xl shadow-neon active:scale-[0.98] flex items-center justify-center gap-1 uppercase tracking-wider text-sm transition-all">
+                    <span class="material-symbols-outlined text-xl" id="icon-start">play_arrow</span>
+                    <span id="text-start">Start Log</span>
+                </button>
+            </div>
+
+            <!-- Enable Sensor (Full width, only visible initially) -->
+            <button id="btn-enable" onclick="requestSensorPermission()" class="w-full max-w-xs bg-primary text-black font-bold py-4 rounded-xl shadow-[0_0_15px_rgba(204,255,0,0.4)] active:scale-95 transition-transform uppercase tracking-wider text-sm absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
+                啟動授權 (Enable Sensors)
             </button>
-            
-            <div class="flex gap-4 w-full max-w-xs">
-                 <button onclick="resetData()" class="flex-1 bg-surface border border-white/10 text-white/50 hover:text-white font-bold py-2 rounded-lg text-xs">Reset Data</button>
+
+            <!-- Debug Info -->
+            <div class="w-full text-center mt-auto pb-2">
+                <span class="text-[10px] text-white/30 font-mono" id="debug-info">Base: 9.80 | Net: 0.00</span>
             </div>
         </div>
 
     </main>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-bg hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-xs rounded-2xl p-5 shadow-2xl border border-primary/20">
+            <div class="flex justify-between items-center mb-5">
+                <h2 class="text-lg font-bold text-white">Settings</h2>
+                <button onclick="toggleSettings()" class="text-white/50 hover:text-white p-1">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <!-- GPS Gating Toggle -->
+                <div class="w-full flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/10">
+                    <div class="flex flex-col">
+                        <span class="text-sm font-bold text-white">Strict GPS Gate</span>
+                        <span class="text-[10px] text-white/50 leading-tight mt-1">Must be > 2km/h to count SPM.</span>
+                    </div>
+                    <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="toggle" id="gps-gate-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 top-0 bottom-0 m-auto"/>
+                        <label for="gps-gate-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer"></label>
+                    </div>
+                </div>
+
+                <div class="w-full flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/10">
+                    <div class="flex flex-col">
+                        <span class="text-sm font-bold text-white">Target Mode</span>
+                        <span class="text-[10px] text-white/50 leading-tight mt-1">Avg SPM calculated over <span id="mode-text">3</span> strokes.</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="bg-white/10 px-3 py-1 rounded text-white active:bg-primary active:text-black font-bold" onclick="updateMode(2)">2</button>
+                        <button class="bg-white/10 px-3 py-1 rounded text-white active:bg-primary active:text-black font-bold" onclick="updateMode(3)">3</button>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="toggleSettings()" class="w-full mt-5 bg-primary text-black font-bold py-3 rounded-xl uppercase tracking-wider hover:bg-primary-dark transition-colors text-sm">
+                Close
+            </button>
+        </div>
+    </div>
+
+    <!-- Report Modal -->
+    <div id="report-modal" class="modal-bg hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="glass-panel w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-primary/30">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="material-symbols-outlined text-primary">bar_chart</span>
+                    Session Report
+                </h2>
+                <button onclick="toggleReport()" class="text-white/50 hover:text-white p-1">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div class="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span class="block text-[10px] text-white/50 uppercase tracking-wider">Data Points</span>
+                    <span class="text-xl font-bold text-white font-mono" id="rep-count">0</span>
+                </div>
+                <div class="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span class="block text-[10px] text-white/50 uppercase tracking-wider">Total Sets</span>
+                    <span class="text-xl font-bold text-white font-mono" id="rep-sets">0</span>
+                </div>
+                <div class="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span class="block text-[10px] text-white/50 uppercase tracking-wider">Max Speed</span>
+                    <span class="text-xl font-bold text-white font-mono" id="rep-speed">0.0 km/h</span>
+                </div>
+                <div class="bg-white/5 p-3 rounded-xl border border-white/10">
+                    <span class="block text-[10px] text-white/50 uppercase tracking-wider">Avg SPM</span>
+                    <span class="text-xl font-bold text-primary font-mono" id="rep-spm">0</span>
+                </div>
+            </div>
+
+            <!-- Export Buttons -->
+            <div class="space-y-3">
+                <button onclick="downloadCSV()" class="w-full bg-primary text-black font-bold py-3 rounded-xl uppercase tracking-wider hover:bg-primary-dark transition-colors text-sm flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-lg">download</span> Download CSV
+                </button>
+                <button onclick="clearLogs()" class="w-full bg-accent-red/20 border border-accent-red/50 text-accent-red font-bold py-3 rounded-xl uppercase tracking-wider hover:bg-accent-red/40 transition-colors text-sm">
+                    Clear All Logs (重置)
+                </button>
+                <button onclick="toggleReport()" class="w-full bg-surface border border-white/10 text-white/70 font-bold py-3 rounded-xl uppercase tracking-wider hover:bg-white/10 transition-colors text-sm">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
 <script>
-    // --- Configuration ---
+    // --- Algorithm Configuration V3 ---
     const CONFIG = {
-        threshold: 13.5,     // 初始門檻
-        debounceMs: 600,     // 防抖動 (600ms = Max 100 SPM)
-        chartPoints: 100     // 圖表寬度
+        filterAlpha: 0.85,      // 低通濾波係數
+        minThreshold: 0.3,      // 絕對最低門檻
+        envelopeDecay: 0.99,    // 包絡線衰減率
+        envelopeRatio: 0.6,     // 動態門檻比例
+        debounceMs: 400,        // 防抖動 
+        speedGateKmH: 2.0,      // GPS閘門速度
+        chartPoints: 120,       // 圖表解析度
+        logIntervalMs: 100      // CSV 記錄頻率 (100ms = 10Hz)
     };
 
-    // --- State ---
+    // --- Core State ---
     const state = {
         active: false,
+        gpsReady: false,
+        speed: 0,
+        useGpsGate: false, 
+        mode: 3,
+        
+        // Timer
+        timer: { running: false, startTime: 0, elapsedTime: 0 },
+
+        // Sensor Math
+        estimatedGravity: 9.81, 
+        linearAcc: 0,           
+        localPeak: 0.3,         
+        currentThreshold: 0.3,  
+        
+        // SPM Math
         lastPeakTime: 0,
-        peaks: [],
-        dataHistory: new Array(CONFIG.chartPoints).fill(9.8),
-        currentMag: 0
+        strokeTimes: [],        
+        
+        // Visualizer
+        historyAcc: new Array(CONFIG.chartPoints).fill(0),
+        historyTh: new Array(CONFIG.chartPoints).fill(0.3),
+
+        // Session Data Logging (Telemetry)
+        session: {
+            data: [],
+            lastLogTime: 0,
+            currentSet: 1
+        }
     };
 
-    // --- DOM ---
+    // --- DOM Elements ---
     const els = {
         spmVal: document.getElementById('spm-val'),
-        status: document.getElementById('status'),
+        speedVal: document.getElementById('speed-val'),
+        sensorStatus: document.getElementById('sensor-status'),
+        gpsStatus: document.getElementById('gps-status'),
         btnEnable: document.getElementById('btn-enable'),
         debug: document.getElementById('debug-info'),
         main: document.getElementById('main-area'),
         canvas: document.getElementById('chart'),
-        thDisplay: document.getElementById('th-display')
+        thDisplay: document.getElementById('th-display'),
+        gpsToggle: document.getElementById('gps-gate-toggle'),
+        minThLabel: document.getElementById('min-th-label'),
+        btnStart: document.getElementById('btn-start'),
+        iconStart: document.getElementById('icon-start'),
+        textStart: document.getElementById('text-start'),
+        logIndicator: document.getElementById('logging-indicator')
     };
     const ctx = els.canvas.getContext('2d');
 
-    // --- Threshold Control ---
-    function updateThreshold(val) {
-        CONFIG.threshold = parseFloat(val);
-        els.thDisplay.innerText = `TH: ${CONFIG.threshold.toFixed(2)}`;
+    // Toggle Listener
+    els.gpsToggle.addEventListener('change', (e) => {
+        state.useGpsGate = e.target.checked;
+    });
+
+    // Min Threshold Update Logic
+    function updateMinThreshold(val) {
+        CONFIG.minThreshold = parseFloat(val);
+        els.minThLabel.innerText = `Min Threshold: ${CONFIG.minThreshold.toFixed(2)}`;
+        // Prevent localPeak from dropping below new threshold
+        if(state.localPeak < CONFIG.minThreshold) state.localPeak = CONFIG.minThreshold;
     }
 
-    // --- Core Logic ---
+    function updateMode(n) {
+        state.mode = n;
+        document.getElementById('mode-text').innerText = n;
+        state.strokeTimes = [];
+        if(els.spmVal.innerText !== "--" && els.spmVal.innerText !== "IDLE") els.spmVal.innerText = "--";
+    }
+
+    // --- Timer & Logging Control ---
+    function toggleTimer() {
+        if (state.timer.running) {
+            // STOP LOGGING CURRENT SET
+            state.timer.running = false;
+            state.timer.elapsedTime = Date.now() - state.timer.startTime;
+            
+            els.btnStart.classList.remove('bg-accent-red', 'text-white');
+            els.btnStart.classList.add('bg-primary', 'text-background-dark');
+            els.textStart.innerText = "START LOG";
+            els.iconStart.innerText = "play_arrow";
+            els.logIndicator.classList.add('hidden');
+
+        } else {
+            // START LOGGING NEW SET
+            // If the current set already has data, it means we are starting a NEW interval/set
+            const hasCurrentSetData = state.session.data.some(d => d.set === state.session.currentSet);
+            if (hasCurrentSetData) {
+                state.session.currentSet++;
+                state.timer.elapsedTime = 0; // 重置計時器歸零
+                state.gps.totalDistance = 0; // 重置距離
+                state.gps.lastValidLat = null;
+                state.gps.lastValidLon = null;
+                state.strokeTimes = [];
+                if(els.spmVal.innerText !== "IDLE") els.spmVal.innerText = "--";
+            }
+            
+            state.timer.running = true;
+            state.timer.startTime = Date.now() - state.timer.elapsedTime;
+            
+            els.btnStart.classList.remove('bg-primary', 'text-background-dark');
+            els.btnStart.classList.add('bg-accent-red', 'text-white');
+            els.textStart.innerText = "STOP LOG";
+            els.iconStart.innerText = "stop";
+            els.logIndicator.classList.remove('hidden');
+        }
+    }
+
+    function finishSession() {
+        // 如果還在跑，先自動停止
+        if (state.timer.running) {
+            toggleTimer();
+        }
+        // 打開紀錄報表彈窗
+        toggleReport();
+    }
+
+    // --- GPS Logic ---
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                  Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function initGPS() {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const speedMs = position.coords.speed;
+                    state.speed = speedMs ? (speedMs * 3.6) : 0.0;
+                    els.speedVal.innerText = state.speed.toFixed(1);
+                    
+                    state.gpsReady = true;
+                    els.gpsStatus.innerHTML = `<span class="material-symbols-outlined text-[12px] text-primary">satellite_alt</span> ON`;
+                    els.gpsStatus.classList.add('text-primary');
+
+                    // Distance Accumulation (Only if running)
+                    if (state.timer.running && position.coords.accuracy <= 50) {
+                        if (state.gps.lastValidLat === null) {
+                            state.gps.lastValidLat = position.coords.latitude;
+                            state.gps.lastValidLon = position.coords.longitude;
+                        } else {
+                            const dist = calculateDistance(state.gps.lastValidLat, state.gps.lastValidLon, position.coords.latitude, position.coords.longitude);
+                            if (dist > 3.0) { 
+                                state.gps.totalDistance += dist;
+                                state.gps.lastValidLat = position.coords.latitude;
+                                state.gps.lastValidLon = position.coords.longitude;
+                            }
+                        }
+                    }
+                },
+                (err) => { 
+                    state.gpsReady = false; 
+                    els.gpsStatus.innerHTML = `<span class="material-symbols-outlined text-[12px] text-accent-red">satellite_alt</span> ERR`;
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        }
+    }
+
+    // --- Advanced Sensor Math V3 & Data Logging ---
     function handleMotion(event) {
         const acc = event.accelerationIncludingGravity;
         if (!acc) return;
 
-        // 1. Calculate Magnitude (Vector Sum)
         const x = acc.x || 0;
         const y = acc.y || 0;
         const z = acc.z || 0;
-        const magnitude = Math.sqrt(x*x + y*y + z*z);
-        
-        state.currentMag = magnitude;
-        
-        // Update Chart History
-        state.dataHistory.push(magnitude);
-        state.dataHistory.shift();
+        const rawMag = Math.sqrt(x*x + y*y + z*z);
 
-        // 2. Detect
-        detectPeak(magnitude);
+        // 2. High-Pass Filter (Gravity Isolation)
+        state.estimatedGravity = (CONFIG.filterAlpha * state.estimatedGravity) + ((1 - CONFIG.filterAlpha) * rawMag);
+        state.linearAcc = Math.abs(rawMag - state.estimatedGravity);
 
-        // 3. Debug Text
-        els.debug.innerText = `Force: ${magnitude.toFixed(2)} m/s²`;
+        // 3. Adaptive Envelope
+        state.localPeak *= CONFIG.envelopeDecay;
+        if (state.linearAcc > state.localPeak) {
+            state.localPeak = state.linearAcc;
+        }
+        state.currentThreshold = Math.max(CONFIG.minThreshold, state.localPeak * CONFIG.envelopeRatio);
+
+        // Update Chart Arrays
+        state.historyAcc.push(state.linearAcc);
+        state.historyAcc.shift();
+        state.historyTh.push(state.currentThreshold);
+        state.historyTh.shift();
+
+        // 4. Peak Detection & Gating
+        processStroke(state.linearAcc, state.currentThreshold);
+
+        // 5. Background Data Logging (10Hz)
+        const now = Date.now();
+        if (state.timer.running && (now - state.session.lastLogTime >= CONFIG.logIntervalMs)) {
+            state.session.lastLogTime = now;
+
+            let currentSpmStr = els.spmVal.innerText;
+            let spmNum = (currentSpmStr === '--' || currentSpmStr === 'IDLE' || currentSpmStr === 'RDY') ? 0 : parseInt(currentSpmStr);
+
+            let msSinceStart = now - state.timer.startTime;
+
+            state.session.data.push({
+                set: state.session.currentSet,
+                time: msSinceStart,
+                x: x.toFixed(3),
+                y: y.toFixed(3),
+                z: z.toFixed(3),
+                mag: rawMag.toFixed(3),
+                grav: state.estimatedGravity.toFixed(3),
+                net: state.linearAcc.toFixed(3),
+                th: state.currentThreshold.toFixed(3),
+                speed: state.speed.toFixed(2),
+                spm: spmNum
+            });
+        }
+
+        // Debug Output
+        els.debug.innerText = `Grav: ${state.estimatedGravity.toFixed(2)} | Net: ${state.linearAcc.toFixed(2)}`;
+        els.thDisplay.innerText = `Auto-TH: ${state.currentThreshold.toFixed(2)}`;
     }
 
-    function detectPeak(mag) {
+    function processStroke(accValue, threshold) {
         const now = Date.now();
         
-        // Dynamic Threshold Check
-        if (mag > CONFIG.threshold && (now - state.lastPeakTime > CONFIG.debounceMs)) {
-            
-            state.lastPeakTime = now;
-            triggerFlash();
-            
-            if (state.peaks.length > 0) {
-                const lastTime = state.peaks[state.peaks.length - 1];
-                const deltaSec = (now - lastTime) / 1000;
-                const currentSpm = Math.round(60 / deltaSec);
-                
-                // Reasonable Range Filter (20 - 130 SPM)
-                if (currentSpm > 20 && currentSpm < 130) {
-                    updateDisplay(currentSpm);
-                }
-            }
-            
-            state.peaks.push(now);
-            if (state.peaks.length > 5) state.peaks.shift();
+        if (state.useGpsGate && state.speed < CONFIG.speedGateKmH) {
+            els.spmVal.innerText = "IDLE";
+            els.spmVal.style.fontSize = "3rem";
+            els.spmVal.classList.remove('text-primary');
+            els.spmVal.classList.add('text-white/30');
+            state.strokeTimes = []; 
+            return;
+        } else {
+            els.spmVal.style.fontSize = ""; 
+            if(els.spmVal.innerText === "IDLE") els.spmVal.innerText = "--";
         }
-    }
 
-    function updateDisplay(spm) {
-        els.spmVal.innerText = spm;
-        els.spmVal.classList.add('text-primary');
-        setTimeout(() => els.spmVal.classList.remove('text-primary'), 200);
+        if (accValue > threshold && (now - state.lastPeakTime > CONFIG.debounceMs)) {
+            const deltaSec = (now - state.lastPeakTime) / 1000;
+            state.lastPeakTime = now;
+            
+            triggerFlash();
+
+            if (deltaSec > 3.0) {
+                state.strokeTimes = [];
+                return;
+            }
+
+            const instantSpm = 60 / deltaSec;
+            state.strokeTimes.push(instantSpm);
+            if (state.strokeTimes.length > state.mode) state.strokeTimes.shift();
+
+            const avgSpm = Math.round(state.strokeTimes.reduce((a, b) => a + b) / state.strokeTimes.length);
+            
+            if (avgSpm > 20 && avgSpm < 150) {
+                els.spmVal.innerText = avgSpm;
+                els.spmVal.classList.add('text-white');
+                els.spmVal.classList.remove('text-primary');
+                setTimeout(() => {
+                    els.spmVal.classList.add('text-primary');
+                    els.spmVal.classList.remove('text-white');
+                }, 150);
+            }
+        }
     }
 
     function triggerFlash() {
         els.main.classList.remove('flash');
         void els.main.offsetWidth;
         els.main.classList.add('flash');
-        if(navigator.vibrate) navigator.vibrate(50);
+        if(navigator.vibrate) navigator.vibrate(40);
     }
 
-    // --- Permissions ---
+    // --- Modals & Report ---
+    function toggleSettings() {
+        document.getElementById('settings-modal').classList.toggle('hidden');
+    }
+
+    function toggleReport() {
+        const modal = document.getElementById('report-modal');
+        
+        if (modal.classList.contains('hidden')) {
+            // Populate stats before showing
+            document.getElementById('rep-count').innerText = state.session.data.length;
+            
+            const totalSets = state.session.data.length > 0 ? state.session.data[state.session.data.length - 1].set : 0;
+            document.getElementById('rep-sets').innerText = totalSets;
+            
+            const maxSpd = state.session.data.reduce((max, d) => Math.max(max, parseFloat(d.speed)), 0);
+            document.getElementById('rep-speed').innerText = maxSpd.toFixed(1) + ' km/h';
+            
+            // Calculate true average SPM for the session (ignoring 0s)
+            let validSpm = state.session.data.filter(d => d.spm > 0).map(d => d.spm);
+            let avg = validSpm.length > 0 ? (validSpm.reduce((a,b)=>a+b,0)/validSpm.length).toFixed(1) : 0;
+            document.getElementById('rep-spm').innerText = avg;
+        }
+        
+        modal.classList.toggle('hidden');
+    }
+
+    function downloadCSV() {
+        if (state.session.data.length === 0) {
+            alert("目前沒有收集到任何數據。請先按下 Start Log 進行錄製。");
+            return;
+        }
+
+        // CSV Header (Added BOM for Excel UTF-8 compatibility)
+        let csv = '\uFEFF' + "Set,Time(ms),Raw_X,Raw_Y,Raw_Z,Magnitude,Gravity,Net_Acc,Threshold,Speed_kmh,Calculated_SPM\n";
+        
+        state.session.data.forEach(row => {
+            csv += `${row.set},${row.time},${row.x},${row.y},${row.z},${row.mag},${row.grav},${row.net},${row.th},${row.speed},${row.spm}\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `DragonPace_Telemetry_${new Date().toISOString().slice(0,10)}.csv`;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    function clearLogs() {
+        if (confirm("確定要清空所有已記錄的資料並重置嗎？(Clear all logs?)")) {
+            // 清空資料
+            state.session.data = [];
+            state.session.currentSet = 1;
+            
+            // 歸零 UI
+            state.timer.elapsedTime = 0;
+            state.gps.totalDistance = 0;
+            state.strokeTimes = [];
+            els.spmVal.innerText = "--";
+            
+            // 關閉報表
+            document.getElementById('report-modal').classList.add('hidden');
+            alert("資料與畫面已重置清空！");
+        }
+    }
+
+    // --- Permissions & Init ---
     async function requestSensorPermission() {
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
                 const permissionState = await DeviceMotionEvent.requestPermission();
                 if (permissionState === 'granted') {
-                    startSensors();
+                    startApp();
                 } else {
-                    alert("Permission denied.");
+                    alert("需要感測器權限才能運作。");
                 }
             } catch (error) {
                 console.error(error);
             }
         } else {
-            startSensors();
+            startApp();
         }
     }
 
-    function startSensors() {
+    function startApp() {
         window.addEventListener('devicemotion', handleMotion);
+        initGPS();
         state.active = true;
-        els.status.innerText = "ACTIVE";
-        els.status.classList.add("text-primary");
+        els.sensorStatus.innerText = "IMU: ON";
+        els.sensorStatus.classList.add("text-primary");
         els.btnEnable.style.display = 'none';
     }
-    
-    function resetData() {
-        state.peaks = [];
-        state.lastPeakTime = 0;
-        els.spmVal.innerText = "--";
-    }
 
-    // --- Visualizer ---
+    // --- Advanced Visualizer ---
     function drawLoop() {
         const w = els.canvas.width = els.canvas.clientWidth;
         const h = els.canvas.height = els.canvas.clientHeight;
         
         ctx.clearRect(0, 0, w, h);
         
-        // Map Y coordinate (0-25 range for visualization)
-        const mapY = (val) => h - ((val / 25) * h); 
+        const MAX_G = 6.0;
+        const mapY = (val) => h - Math.min((val / MAX_G) * h, h); 
         
-        // 1. Draw Gravity Ref (Grey) ~ 9.8
-        const gY = mapY(9.8);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.beginPath(); ctx.moveTo(0, gY); ctx.lineTo(w, gY); ctx.stroke();
+        const zeroY = h - 1;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
 
-        // 2. Draw Dynamic Threshold (Red)
-        const thY = mapY(CONFIG.threshold);
+        const step = w / CONFIG.chartPoints;
+
+        // Dynamic Threshold Line
+        ctx.beginPath();
         ctx.strokeStyle = 'rgba(255, 80, 80, 0.8)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 4]);
-        ctx.beginPath(); ctx.moveTo(0, thY); ctx.lineTo(w, thY); ctx.stroke();
-        ctx.setLineDash([]);
-
-        // 3. Draw Signal (Green)
-        ctx.beginPath();
-        ctx.strokeStyle = '#ccff00';
-        ctx.lineWidth = 2;
-        
-        const step = w / CONFIG.chartPoints;
-        state.dataHistory.forEach((val, i) => {
+        state.historyTh.forEach((val, i) => {
             const x = i * step;
             const y = mapY(val);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         });
         ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Net Acceleration Signal
+        ctx.beginPath();
+        ctx.strokeStyle = '#ccff00';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = '#ccff00';
+        
+        state.historyAcc.forEach((val, i) => {
+            const x = i * step;
+            const y = mapY(val);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        
+        ctx.shadowBlur = 0; 
 
         requestAnimationFrame(drawLoop);
     }
