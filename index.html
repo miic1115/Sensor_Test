@@ -134,7 +134,7 @@
         <!-- Live Chart (Prominence / Axis Isolated) -->
         <div class="canvas-container flex-shrink-0">
             <canvas id="chart"></canvas>
-            <div class="absolute top-2 left-2 text-[10px] text-primary/70 font-mono tracking-wider">SMOOTHED AXIS WAVE</div>
+            <div class="absolute top-2 left-2 text-[10px] text-primary/70 font-mono tracking-wider">SMOOTHED AXIS WAVE (CENTER=0)</div>
             <div class="absolute bottom-2 left-2 text-[10px] text-white/50 font-mono font-bold" id="axis-display">Active Axis: WAIT</div>
             <div class="absolute bottom-2 right-2 text-[10px] text-red-400 font-mono font-bold" id="th-display">Prominence: 0.10</div>
             
@@ -467,11 +467,12 @@
 
         els.axisDisplay.innerText = `Active Axis: ${state.activeAxis}`;
 
-        // 提取該軸的絕對動態數值 (因為拉水可能是負向也可能是正向，取絕對值保證都是波峰)
+        // [Bug Fix] 提取該軸的動態數值 (不取絕對值)
+        // 保留完整的正負波浪（Sine Wave），這樣一槳只會產生一個完整的波峰波谷，不會被重複計算
         let rawTarget = 0;
-        if (state.activeAxis === 'X') rawTarget = Math.abs(dynX);
-        if (state.activeAxis === 'Y') rawTarget = Math.abs(dynY);
-        if (state.activeAxis === 'Z') rawTarget = Math.abs(dynZ);
+        if (state.activeAxis === 'X') rawTarget = dynX;
+        if (state.activeAxis === 'Y') rawTarget = dynY;
+        if (state.activeAxis === 'Z') rawTarget = dynZ;
 
         // 3. 低通平滑濾波 (Low-Pass Smoothing)
         state.smoothBuffer.push(rawTarget);
@@ -485,13 +486,10 @@
 
         // 4. 相對突起度狀態機 (Prominence Peak Detection)
         let isPeakThisFrame = false;
-
-        // 防呆機制：如果很久沒動（例如2秒），重置狀態機避免卡死
         const now = Date.now();
-        if (now - state.lastPeakTime > 2000) {
-            state.peakState = 'FIND_PEAK';
-            state.localMax = -999;
-        }
+
+        // [Bug Fix] 移除了錯誤的超時重置機制 (那會導致系統無限重置找波峰)
+        // 由於我們改成了純粹的正負弦波(Sine Wave)，它一定會跨越 0 產生高低差，所以不需要強制重置。
 
         if (state.peakState === 'FIND_PEAK') {
             if (state.smoothedAcc > state.localMax) {
@@ -677,19 +675,20 @@
         els.btnEnable.style.display = 'none';
     }
 
-    // --- V4 Visualizer ---
+    // --- V4 Visualizer (Updated for Center-Zero Sine Wave) ---
     function drawLoop() {
         const w = els.canvas.width = els.canvas.clientWidth;
         const h = els.canvas.height = els.canvas.clientHeight;
         
         ctx.clearRect(0, 0, w, h);
         
-        // V4 Wave Mapping (Scale is smaller since we isolated the axis and removed gravity)
+        // V4 Wave Mapping (Scale is +/- MAX_G, zero is in the middle)
         const MAX_G = 3.0; // 3 m/s2 is a huge surge on a single axis
-        const mapY = (val) => h - Math.min((val / MAX_G) * h, h); 
+        // 映射函數：當 val = 0 時，y 會剛好是 h/2 (畫布正中央)
+        const mapY = (val) => (h / 2) - ((val / MAX_G) * (h / 2)); 
         
-        const zeroY = h - 1;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        const zeroY = h / 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
 
         const step = w / CONFIG.chartPoints;
